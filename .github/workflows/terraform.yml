@@ -19,7 +19,7 @@ on:
   pull_request:
     branches: [develop, main]
   push:
-    branches: [main]
+    branches: [develop, main]
   workflow_dispatch:
     inputs:
       action:
@@ -116,7 +116,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     # Uma instância com um database por ambiente (ADR 0002): um state só.
-    environment: production
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'homolog' }}
     concurrency:
       group: terraform-database
       cancel-in-progress: false
