@@ -1,0 +1,159 @@
+name: Terraform
+
+# PR para develop/main: fmt, validate, tflint, terraform test e plan.
+# Push em main (merge do PR): apply do RDS, dos Secrets e do bootstrap no EKS.
+# Execução manual (workflow_dispatch): apply ou destroy, para economizar o
+# crédito do Learner Lab entre as sessões.
+#
+# Configuração (organização ou repositório), igual à do tech-challenge-k8s:
+# - secrets AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN: sessão
+#   atual do AWS Academy (AWS Details > AWS CLI), renovada a cada 4 horas;
+# - variable AWS_DEPLOY_ENABLED=true liga plan/apply (sem ela só roda o CI);
+# - opcionais: AWS_REGION (padrão us-east-1), TF_STATE_BUCKET (padrão
+#   techchallenge-tfstate-<account-id>, o mesmo do tech-challenge-k8s) e
+#   AWS_DEPLOY_ROLE_ARN (OIDC fora do Academy, no lugar das chaves).
+#
+# O plan e o apply leem o state do tech-challenge-k8s e acessam o cluster EKS:
+# o cluster precisa existir antes.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Ação no banco
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: 1.15.8
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  validate:
+    name: Validar Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: v0.65.0
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff terraform
+
+      - name: terraform validate
+        run: |
+          for dir in terraform/database terraform/local terraform/modules/bootstrap; do
+            terraform -chdir="$dir" init -backend=false
+            terraform -chdir="$dir" validate
+          done
+
+      - name: tflint
+        run: |
+          tflint --init
+          for dir in terraform/database terraform/local terraform/modules/bootstrap; do
+            tflint --chdir="$dir" --config="$GITHUB_WORKSPACE/.tflint.hcl"
+          done
+
+      - name: terraform test (providers simulados)
+        run: |
+          for dir in terraform/database terraform/local terraform/modules/bootstrap; do
+            terraform -chdir="$dir" test
+          done
+
+      - name: Scripts do bootstrap
+        run: shellcheck terraform/modules/bootstrap/scripts/*.sh
+
+  plan:
+    name: Plan
+    if: github.event_name == 'pull_request' && vars.AWS_DEPLOY_ENABLED == 'true'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          working-directory: terraform/database
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+
+      - name: terraform plan
+        run: terraform -chdir=terraform/database plan -lock=false -var region="$AWS_REGION" -var state_bucket="$TF_STATE_BUCKET"
+
+  apply:
+    # Nome fixo: o GitHub não avalia expressões no nome de jobs pulados.
+    name: Apply
+    if: vars.AWS_DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: validate
+    runs-on: ubuntu-latest
+    # Uma instância com um database por ambiente (ADR 0002): um state só.
+    environment: production
+    concurrency:
+      group: terraform-database
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - uses: ./.github/actions/terraform-init
+        with:
+          working-directory: terraform/database
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          state-bucket: ${{ vars.TF_STATE_BUCKET }}
+
+      - name: terraform ${{ inputs.action || 'apply' }}
+        run: terraform -chdir=terraform/database "${{ inputs.action || 'apply' }}" -auto-approve -var region="$AWS_REGION" -var state_bucket="$TF_STATE_BUCKET"
+
+      - name: Resumo
+        if: inputs.action != 'destroy'
+        run: |
+          {
+            echo "### Banco $(terraform -chdir=terraform/database output -raw endpoint)"
+            echo
+            echo "Secrets da Lambda (secret_arn de cada ambiente):"
+            echo
+            echo '```json'
+            terraform -chdir=terraform/database output -json lambda_secret_arns
+            echo '```'
+            echo
+            echo '```bash'
+            echo "kubectl -n techchallenge-database get jobs"
+            echo "kubectl -n techchallenge-database logs job/db-auth-clients"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
