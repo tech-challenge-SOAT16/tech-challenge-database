@@ -5,6 +5,15 @@ resource "random_password" "approval_signing_key" {
   special = false
 }
 
+# Assinatura dos tokens de funcionários emitidos pelo login da API (HS256).
+# Clientes usam o JWT RS256 da Lambda, que não depende desta chave.
+resource "random_password" "jwt_signing_key" {
+  for_each = var.environments
+
+  length  = 64
+  special = false
+}
+
 resource "random_password" "integration_api_key" {
   for_each = var.environments
 
@@ -66,6 +75,7 @@ resource "kubernetes_secret_v1" "api" {
   data = {
     ConnectionStrings__DefaultConnection = local.app_connection_strings[each.key]
     ApprovalLinks__SigningKey            = random_password.approval_signing_key[each.key].result
+    Jwt__LocalSigningKey                 = random_password.jwt_signing_key[each.key].result
     IntegracaoExterna__ApiKey            = random_password.integration_api_key[each.key].result
     Seed__AdminPassword                  = random_password.seed_admin[each.key].result
     Smtp__Host                           = var.smtp_host

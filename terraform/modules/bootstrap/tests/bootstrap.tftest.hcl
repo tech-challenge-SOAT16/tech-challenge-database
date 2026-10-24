@@ -38,6 +38,7 @@ run "secrets_da_api" {
     condition = toset(keys(kubernetes_secret_v1.api["production"].data)) == toset([
       "ConnectionStrings__DefaultConnection",
       "ApprovalLinks__SigningKey",
+      "Jwt__LocalSigningKey",
       "IntegracaoExterna__ApiKey",
       "Seed__AdminPassword",
       "Smtp__Host",
@@ -61,6 +62,11 @@ run "secrets_da_api" {
   assert {
     condition     = kubernetes_secret_v1.api["production"].data["Smtp__Host"] == "mailpit" && kubernetes_secret_v1.api["production"].data["Smtp__Port"] == "1025"
     error_message = "SMTP deve apontar para o Mailpit do namespace."
+  }
+
+  assert {
+    condition     = random_password.jwt_signing_key["production"].length >= 32
+    error_message = "Jwt__LocalSigningKey precisa de pelo menos 32 caracteres."
   }
 
   assert {
