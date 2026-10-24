@@ -113,6 +113,7 @@ gerados com `random_password`):
 | --- | --- |
 | `ConnectionStrings__DefaultConnection` | `Host=<rds>;Port=5432;Database=<database>;Username=<role da API>;Password=...;SSL Mode=Require` |
 | `ApprovalLinks__SigningKey` | 64 caracteres |
+| `Jwt__LocalSigningKey` | 64 caracteres; assina os tokens de funcionários do login da API |
 | `IntegracaoExterna__ApiKey` | 40 caracteres |
 | `Seed__AdminPassword` | senha do usuário `admin` criado pelo seed da API |
 | `Smtp__Host` / `Smtp__Port` | `mailpit` / `1025` (Mailpit de cada namespace) |
