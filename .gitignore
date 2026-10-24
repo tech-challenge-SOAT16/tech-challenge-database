@@ -1,0 +1,15 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.auto.tfvars
+terraform.tfvars
+
+# Módulos não fixam providers; o lock fica nas raízes (database e local)
+terraform/modules/**/.terraform.lock.hcl
