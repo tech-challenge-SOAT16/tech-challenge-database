@@ -1,0 +1,42 @@
+# Exemplo de configuração de terraform/database. Todos os valores abaixo são os
+# padrões; altere só o que precisar.
+# Para usar localmente, copie para terraform.tfvars.
+
+region       = "us-east-1"
+project_name = "techchallenge"
+
+# Vazio: techchallenge-tfstate-<account-id>, o mesmo bucket do tech-challenge-k8s.
+state_bucket      = ""
+cluster_state_key = "tech-challenge-k8s/cluster.tfstate"
+
+# Limites do AWS Academy: classes micro/small, gp2, sem Multi-AZ.
+engine_version    = "17"
+instance_class    = "db.t3.micro"
+allocated_storage = 20
+master_username   = "techchallenge_admin"
+
+backup_retention_days = 7
+deletion_protection   = false
+skip_final_snapshot   = true
+
+# true somente fora do AWS Academy (cria a role e liga o Enhanced Monitoring).
+create_iam_roles             = false
+monitoring_interval          = 60
+performance_insights_enabled = false
+
+namespace = "techchallenge-database"
+
+environments = {
+  production = {
+    namespace   = "techchallenge"
+    database    = "techchallenge"
+    app_role    = "techchallenge_app"
+    lambda_role = "lambda_auth"
+  }
+  homolog = {
+    namespace   = "techchallenge-homolog"
+    database    = "techchallenge_homolog"
+    app_role    = "techchallenge_homolog_app"
+    lambda_role = "lambda_auth_homolog"
+  }
+}
