@@ -63,6 +63,9 @@ jobs:
           done
 
       - name: tflint
+        env:
+          # Autentica o download do plugin aws (limite da API do GitHub).
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init
           for dir in terraform/database terraform/local terraform/modules/bootstrap; do
